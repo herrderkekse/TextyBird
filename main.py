@@ -17,8 +17,14 @@ gap_height = 3  # Height of the opening in columns
 player_x = 20  # Fixed x position
 player_y = y_pixel // 2  # Starting y position
 player_velocity = 0  # Vertical velocity
+player_char = ">"
 gravity = 20.0  # Acceleration due to gravity (pixels/second²)
 jump_strength = -10.0  # Negative because up is lower y-values
+
+# Game state
+score = 0
+game_over = False
+passed_columns = set()  # Keep track of columns we've passed through
 
 # Initialize columns with random spacing and gap positions
 columns = []
@@ -41,32 +47,67 @@ def restore_keyboard():
 
 
 def check_keyboard():
-    global player_velocity
-    # Check if there's input waiting (timeout of 0 makes it non-blocking)
+    global player_velocity, game_over
     if select.select([sys.stdin], [], [], 0)[0] != []:
         key = sys.stdin.read(1)
         if key == ' ':  # Space bar
-            player_velocity = jump_strength
+            if game_over:
+                reset_game()
+            else:
+                player_velocity = jump_strength
         # Clear any remaining input
         while select.select([sys.stdin], [], [], 0)[0] != []:
             sys.stdin.read(1)
 
 
+def reset_game():
+    global player_y, player_velocity, score, game_over, columns, passed_columns
+    player_y = y_pixel // 2
+    player_velocity = 0
+    score = 0
+    game_over = False
+    passed_columns.clear()
+
+    # Reset columns
+    columns.clear()
+    current_x = x_pixel
+    for _ in range(num_columns):
+        gap_start = random.randint(1, y_pixel - gap_height - 1)
+        columns.append([current_x, gap_start])
+        current_x += random.randint(min_spacing, max_spacing)
+
+
+def check_collision():
+    global game_over, score
+    player_y_int = int(player_y)
+
+    for col_x, gap_start in columns:
+        if int(col_x) == player_x:
+            # Check if player is in the gap
+            if not (gap_start <= player_y_int < gap_start + gap_height):
+                game_over = True
+            # Add to score if we haven't counted this column yet
+            elif col_x not in passed_columns:
+                passed_columns.add(col_x)
+                score += 1
+
+
 def generateFrame():
-    output = "-" * (x_pixel + 2) + "\n"
+    if game_over:
+        return generate_game_over_screen()
+
+    output = f"Score: {score}\n"
+    output += "-" * (x_pixel + 2) + "\n"
     for i in range(y_pixel):
         output += "|"
         for j in range(x_pixel):
-            # Draw player
             if i == int(player_y) and j == player_x:
-                output += "P"
+                output += player_char
                 continue
 
-            # Check if any column is at this x position
             column_here = False
             for col_x, gap_start in columns:
                 if int(col_x) == j:
-                    # Draw space if we're in the gap, H otherwise
                     if gap_start <= i < gap_start + gap_height:
                         output += " "
                     else:
@@ -80,14 +121,37 @@ def generateFrame():
     return output
 
 
+def generate_game_over_screen():
+    output = f"Game Over - Score: {score}\n"
+    output += "-" * (x_pixel + 2) + "\n"
+
+    # Center the game over message
+    game_over_msg = "GAME OVER - Press SPACE to restart"
+    padding = (x_pixel - len(game_over_msg)) // 2
+
+    for i in range(y_pixel):
+        output += "|"
+        if i == y_pixel // 2:
+            output += " " * padding + game_over_msg + " " * \
+                (x_pixel - padding - len(game_over_msg))
+        else:
+            output += " " * x_pixel
+        output += "|\n"
+    output += "-" * (x_pixel + 2) + "\n"
+    return output
+
+
 def outputFrame(frame):
-    sys.stdout.write('\033[A' * (y_pixel + 2))  # Move cursor up
+    sys.stdout.write('\033[A' * (y_pixel + 3))  # +3 for score line and borders
     sys.stdout.write(frame)
     sys.stdout.flush()
 
 
 def updatePosition(delta_time):
     global player_y, player_velocity
+
+    if game_over:
+        return
 
     # Update player physics
     player_velocity += gravity * delta_time
@@ -111,13 +175,15 @@ def updatePosition(delta_time):
             new_gap = random.randint(1, y_pixel - gap_height - 1)
             columns[i] = [new_position, new_gap]
 
+    check_collision()
+
 
 try:
     # Set up keyboard
     init_keyboard()
 
     # Print initial empty lines to allow cursor movement
-    print("\n" * (y_pixel + 2))
+    print("\n" * (y_pixel + 3))  # +3 for score line and borders
 
     last_time = time.time()
     while True:
