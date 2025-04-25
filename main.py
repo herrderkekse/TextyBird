@@ -7,11 +7,11 @@ import tty
 
 x_pixel = 100
 y_pixel = 20
-speed = 30  # Pixels per second
+speed = 40  # Pixels per second
 min_spacing = 15  # Minimum space between columns
 max_spacing = 40  # Maximum space between columns
 num_columns = 4  # Number of columns
-gap_height = 3  # Height of the opening in columns
+gap_height = 18  # Height of the opening in columns
 
 # Player physics
 player_x = 20  # Fixed x position
@@ -66,7 +66,7 @@ def reset_game():
     player_velocity = 0
     score = 0
     game_over = False
-    passed_columns.clear()
+    passed_columns = set()  # Change to store column indices instead of x positions
 
     # Reset columns
     columns.clear()
@@ -81,15 +81,17 @@ def check_collision():
     global game_over, score
     player_y_int = int(player_y)
 
-    for col_x, gap_start in columns:
-        if int(col_x) == player_x:
-            # Check if player is in the gap
-            if not (gap_start <= player_y_int < gap_start + gap_height):
-                game_over = True
-            # Add to score if we haven't counted this column yet
-            elif col_x not in passed_columns:
-                passed_columns.add(col_x)
+    for i, (col_x, gap_start) in enumerate(columns):
+        # Score when passing the column (using the column index instead of x position)
+        if i not in passed_columns and col_x < player_x:
+            # Check if player was in the gap when passing
+            if gap_start <= player_y_int < gap_start + gap_height:
+                passed_columns.add(i)
                 score += 1
+
+        # Collision detection
+        if int(col_x) == player_x and not (gap_start <= player_y_int < gap_start + gap_height):
+            game_over = True
 
 
 def generateFrame():
@@ -150,7 +152,7 @@ def outputFrame(frame):
 
 
 def updatePosition(delta_time):
-    global player_y, player_velocity, game_over
+    global player_y, player_velocity, game_over, passed_columns
 
     if game_over:
         return
@@ -176,6 +178,8 @@ def updatePosition(delta_time):
                 rightmost + random.randint(min_spacing, max_spacing), x_pixel)
             new_gap = random.randint(1, y_pixel - gap_height - 1)
             columns[i] = [new_position, new_gap]
+            # Remove this column's index from passed_columns when recycling it
+            passed_columns.discard(i)
 
     check_collision()
 
