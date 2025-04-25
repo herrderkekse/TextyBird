@@ -134,19 +134,43 @@ def check_collision():
             save_highscore()  # Save highscore when game ends
 
 
+# Color constants
+RED = "\033[31m"
+GREEN = "\033[32m"
+YELLOW = "\033[33m"
+BLUE = "\033[34m"
+MAGENTA = "\033[35m"
+CYAN = "\033[36m"
+WHITE = "\033[37m"
+BRIGHT_RED = "\033[91m"
+BRIGHT_GREEN = "\033[92m"
+BRIGHT_YELLOW = "\033[93m"
+BRIGHT_BLUE = "\033[94m"
+BRIGHT_MAGENTA = "\033[95m"
+BRIGHT_CYAN = "\033[96m"
+BRIGHT_WHITE = "\033[97m"
+RESET = "\033[0m"
+
+# Game elements
+BORDER_CHAR = f"{BLUE}─{RESET}"
+BORDER_VERTICAL = f"{BLUE}│{RESET}"
+SCORE_COLOR = BRIGHT_GREEN
+HIGHSCORE_COLOR = BRIGHT_YELLOW
+GAMEOVER_COLOR = BRIGHT_RED
+
+
 def generateFrame():
     if game_over:
         return generate_game_over_screen()
 
-    output = f"Score: {score} | Highscore: {highscore}\n"
-    output += "-" * (x_pixel + 2) + "\n"
+    output = f"{SCORE_COLOR}Score: {score}{RESET} | {HIGHSCORE_COLOR}Highscore: {highscore}{RESET}\n"
+    output += BORDER_CHAR * (x_pixel + 2) + "\n"
     for i in range(y_pixel):
-        output += "|"
+        output += BORDER_VERTICAL
         j = 0
         while j < x_pixel:
             if i == int(player_y) and j == player_x:
                 output += player_char
-                # Use visible length instead of len(player_char)
                 j += PLAYER_VISIBLE_LENGTH
                 continue
 
@@ -162,28 +186,29 @@ def generateFrame():
             if not column_here:
                 output += " "
             j += 1
-        output += "|\n"
-    output += "-" * (x_pixel + 2) + "\n"
+        output += BORDER_VERTICAL + "\n"
+    output += BORDER_CHAR * (x_pixel + 2) + "\n"
     return output
 
 
 def generate_game_over_screen():
-    output = f"Game Over - Score: {score} | Highscore: {highscore}\n"
-    output += "-" * (x_pixel + 2) + "\n"
+    output = f"{GAMEOVER_COLOR}Game Over - Score: {score}{RESET} | {HIGHSCORE_COLOR}Highscore: {highscore}{RESET}\n"
+    output += BORDER_CHAR * (x_pixel + 2) + "\n"
 
     # Center the game over message
-    game_over_msg = "GAME OVER - Press SPACE to restart"
-    padding = (x_pixel - len(game_over_msg)) // 2
+    game_over_msg = f"{GAMEOVER_COLOR}GAME OVER - Press SPACE to restart{RESET}"
+    visible_msg_length = strip_ansi(game_over_msg)
+    padding = (x_pixel - visible_msg_length) // 2
 
     for i in range(y_pixel):
-        output += "|"
+        output += BORDER_VERTICAL
         if i == y_pixel // 2:
             output += " " * padding + game_over_msg + " " * \
-                (x_pixel - padding - len(game_over_msg))
+                (x_pixel - padding - visible_msg_length)
         else:
             output += " " * x_pixel
-        output += "|\n"
-    output += "-" * (x_pixel + 2) + "\n"
+        output += BORDER_VERTICAL + "\n"
+    output += BORDER_CHAR * (x_pixel + 2) + "\n"
     return output
 
 
