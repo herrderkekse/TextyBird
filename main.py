@@ -6,275 +6,283 @@ import termios
 import tty
 import os
 import re
+from dataclasses import dataclass
+from typing import List, Set, Tuple
 
 
-def strip_ansi(text):
+@dataclass
+class GameConfig:
+    SCREEN_WIDTH: int = 100
+    SCREEN_HEIGHT: int = 20
+    SPEED: float = 40.0  # Pixels per second
+    MIN_SPACING: int = 15
+    MAX_SPACING: int = 40
+    NUM_COLUMNS: int = 4
+    GAP_HEIGHT: int = 8
+    FPS: int = 60
+    FRAME_TIME: float = 1.0 / FPS
+
+
+@dataclass
+class PlayerConfig:
+    START_X: int = 20
+    GRAVITY: float = 20.0
+    JUMP_STRENGTH: float = -10.0
+    CHARACTER: str = "\033[33m(0)>\033[0m"
+
+
+@dataclass
+class Colors:
+    RED = "\033[31m"
+    GREEN = "\033[32m"
+    YELLOW = "\033[33m"
+    BLUE = "\033[34m"
+    MAGENTA = "\033[35m"
+    CYAN = "\033[36m"
+    WHITE = "\033[37m"
+    BRIGHT_RED = "\033[91m"
+    BRIGHT_GREEN = "\033[92m"
+    BRIGHT_YELLOW = "\033[93m"
+    BRIGHT_BLUE = "\033[94m"
+    BRIGHT_MAGENTA = "\033[95m"
+    BRIGHT_CYAN = "\033[96m"
+    BRIGHT_WHITE = "\033[97m"
+    RESET = "\033[0m"
+
+
+# Game elements
+COLUMN_CHAR = f"{Colors.GREEN}H{Colors.RESET}"
+BORDER_CHAR = f"{Colors.BLUE}─{Colors.RESET}"
+BORDER_VERTICAL = f"{Colors.BLUE}│{Colors.RESET}"
+HIGHSCORE_FILE = "highscore.txt"
+
+
+class GameState:
+    def __init__(self):
+        self.config = GameConfig()
+        self.player_config = PlayerConfig()
+        self.player_y = self.config.SCREEN_HEIGHT // 2
+        self.player_velocity = 0.0
+        self.score = 0
+        self.highscore = 0
+        self.game_over = False
+        self.passed_columns: Set[int] = set()
+        self.columns: List[List[float]] = []
+        self.player_visible_length = strip_ansi(self.player_config.CHARACTER)
+
+        self._init_columns()
+        self._load_highscore()
+
+    def _init_columns(self) -> None:
+        current_x = self.config.SCREEN_WIDTH
+        for _ in range(self.config.NUM_COLUMNS):
+            gap_start = random.randint(
+                1, self.config.SCREEN_HEIGHT - self.config.GAP_HEIGHT - 1)
+            self.columns.append([current_x, gap_start])
+            current_x += random.randint(self.config.MIN_SPACING,
+                                        self.config.MAX_SPACING)
+
+    def _load_highscore(self) -> None:
+        try:
+            if os.path.exists(HIGHSCORE_FILE):
+                with open(HIGHSCORE_FILE, 'r') as f:
+                    self.highscore = int(f.read().strip())
+        except:
+            self.highscore = 0
+
+    def save_highscore(self) -> None:
+        if self.score > self.highscore:
+            self.highscore = self.score
+            try:
+                with open(HIGHSCORE_FILE, 'w') as f:
+                    f.write(str(self.highscore))
+            except:
+                pass
+
+    def reset(self) -> None:
+        self.player_y = self.config.SCREEN_HEIGHT // 2
+        self.player_velocity = 0
+        self.score = 0
+        self.game_over = False
+        self.passed_columns.clear()
+        self.columns.clear()
+        self._init_columns()
+
+
+def strip_ansi(text: str) -> int:
     """Remove ANSI escape codes from text and return the visible length."""
     ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
     return len(ansi_escape.sub('', text))
 
 
-x_pixel = 100
-y_pixel = 20
-speed = 40  # Pixels per second
-min_spacing = 15  # Minimum space between columns
-max_spacing = 40  # Maximum space between columns
-num_columns = 4  # Number of columns
-gap_height = 8  # Height of the opening in columns
-column_char = "\033[32mH\033[0m"
+class InputHandler:
+    def __init__(self):
+        self.old_settings = termios.tcgetattr(sys.stdin)
 
-# Player physics
-player_x = 20  # Fixed x position
-player_y = y_pixel // 2  # Starting y position
-player_velocity = 0  # Vertical velocity
-player_char = "\033[33m(0)>\033[0m"  # Yellow color for player
-# Automatically calculate visible length
-PLAYER_VISIBLE_LENGTH = strip_ansi(player_char)
-gravity = 20.0  # Acceleration due to gravity (pixels/second²)
-jump_strength = -10.0  # Negative because up is lower y-values
+    def init_keyboard(self) -> None:
+        tty.setcbreak(sys.stdin.fileno())
 
-# Game state
-score = 0
-game_over = False
-passed_columns = set()  # Keep track of columns we've passed through
+    def restore_keyboard(self) -> None:
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.old_settings)
 
-# Highscore functionality
-HIGHSCORE_FILE = "highscore.txt"
-highscore = 0
+    def check_keyboard(self, game_state: GameState) -> None:
+        if select.select([sys.stdin], [], [], 0)[0] != []:
+            key = sys.stdin.read(1)
+            if key == ' ':  # Space bar
+                if game_state.game_over:
+                    game_state.reset()
+                else:
+                    game_state.player_velocity = game_state.player_config.JUMP_STRENGTH
+            # Clear remaining input
+            while select.select([sys.stdin], [], [], 0)[0] != []:
+                sys.stdin.read(1)
 
 
-def load_highscore():
-    global highscore
-    try:
-        if os.path.exists(HIGHSCORE_FILE):
-            with open(HIGHSCORE_FILE, 'r') as f:
-                highscore = int(f.read().strip())
-    except:
-        highscore = 0
+class Renderer:
+    @staticmethod
+    def generate_frame(game_state: GameState) -> str:
+        if game_state.game_over:
+            return Renderer._generate_game_over_screen(game_state)
 
+        output = (f"{Colors.BRIGHT_GREEN}Score: {game_state.score}{Colors.RESET} | "
+                  f"{Colors.BRIGHT_YELLOW}Highscore: {game_state.highscore}{Colors.RESET}\n")
+        output += BORDER_CHAR * (game_state.config.SCREEN_WIDTH + 2) + "\n"
 
-def save_highscore():
-    global highscore, score
-    if score > highscore:
-        highscore = score
-        try:
-            with open(HIGHSCORE_FILE, 'w') as f:
-                f.write(str(highscore))
-        except:
-            pass
+        for i in range(game_state.config.SCREEN_HEIGHT):
+            output += BORDER_VERTICAL
+            j = 0
+            while j < game_state.config.SCREEN_WIDTH:
+                if i == int(game_state.player_y) and j == game_state.player_config.START_X:
+                    output += game_state.player_config.CHARACTER
+                    j += game_state.player_visible_length
+                    continue
 
+                column_here = False
+                for col_x, gap_start in game_state.columns:
+                    if int(col_x) == j:
+                        if gap_start <= i < gap_start + game_state.config.GAP_HEIGHT:
+                            output += " "
+                        else:
+                            output += COLUMN_CHAR
+                        column_here = True
+                        break
+                if not column_here:
+                    output += " "
+                j += 1
+            output += BORDER_VERTICAL + "\n"
+        output += BORDER_CHAR * (game_state.config.SCREEN_WIDTH + 2) + "\n"
+        return output
 
-# Initialize columns with random spacing and gap positions
-columns = []
-current_x = x_pixel
-for _ in range(num_columns):
-    gap_start = random.randint(1, y_pixel - gap_height - 1)
-    columns.append([current_x, gap_start])
-    current_x += random.randint(min_spacing, max_spacing)
+    @staticmethod
+    def _generate_game_over_screen(game_state: GameState) -> str:
+        output = (f"{Colors.BRIGHT_RED}Game Over - Score: {game_state.score}{Colors.RESET} | "
+                  f"{Colors.BRIGHT_YELLOW}Highscore: {game_state.highscore}{Colors.RESET}\n")
+        output += BORDER_CHAR * (game_state.config.SCREEN_WIDTH + 2) + "\n"
 
-# Terminal settings for non-blocking input
-old_settings = termios.tcgetattr(sys.stdin)
+        game_over_msg = f"{Colors.BRIGHT_RED}GAME OVER - Press SPACE to restart{Colors.RESET}"
+        visible_msg_length = strip_ansi(game_over_msg)
+        padding = (game_state.config.SCREEN_WIDTH - visible_msg_length) // 2
 
-
-def init_keyboard():
-    tty.setcbreak(sys.stdin.fileno())
-
-
-def restore_keyboard():
-    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
-
-
-def check_keyboard():
-    global player_velocity, game_over
-    if select.select([sys.stdin], [], [], 0)[0] != []:
-        key = sys.stdin.read(1)
-        if key == ' ':  # Space bar
-            if game_over:
-                reset_game()
+        for i in range(game_state.config.SCREEN_HEIGHT):
+            output += BORDER_VERTICAL
+            if i == game_state.config.SCREEN_HEIGHT // 2:
+                output += " " * padding + game_over_msg + " " * (
+                    game_state.config.SCREEN_WIDTH - padding - visible_msg_length)
             else:
-                player_velocity = jump_strength
-        # Clear any remaining input
-        while select.select([sys.stdin], [], [], 0)[0] != []:
-            sys.stdin.read(1)
+                output += " " * game_state.config.SCREEN_WIDTH
+            output += BORDER_VERTICAL + "\n"
+        output += BORDER_CHAR * (game_state.config.SCREEN_WIDTH + 2) + "\n"
+        return output
 
 
-def reset_game():
-    global player_y, player_velocity, score, game_over, columns, passed_columns
-    player_y = y_pixel // 2
-    player_velocity = 0
-    score = 0
-    game_over = False
-    passed_columns = set()  # Change to store column indices instead of x positions
+def main():
+    game_state = GameState()
+    input_handler = InputHandler()
+    renderer = Renderer()
 
-    # Reset columns
-    columns.clear()
-    current_x = x_pixel
-    for _ in range(num_columns):
-        gap_start = random.randint(1, y_pixel - gap_height - 1)
-        columns.append([current_x, gap_start])
-        current_x += random.randint(min_spacing, max_spacing)
+    try:
+        input_handler.init_keyboard()
+        print('\033[2J\033[H', end='')  # Clear screen and move to top
 
+        last_time = time.time()
+        while True:
+            current_time = time.time()
+            delta_time = current_time - last_time
+            last_time = current_time
 
-def check_collision():
-    global game_over, score
-    player_y_int = int(player_y)
+            input_handler.check_keyboard(game_state)
+            update_game_state(game_state, delta_time)
+            frame = renderer.generate_frame(game_state)
+            output_frame(frame)
+            time.sleep(game_state.config.FRAME_TIME)
 
-    for i, (col_x, gap_start) in enumerate(columns):
-        # Score when passing the column (using the column index instead of x position)
-        if i not in passed_columns and col_x < player_x:
-            # Check if player was in the gap when passing
-            if gap_start <= player_y_int < gap_start + gap_height:
-                passed_columns.add(i)
-                score += 1
-
-        # Collision detection for all positions the player character occupies
-        if any(int(col_x) == player_x + offset for offset in range(PLAYER_VISIBLE_LENGTH)) and \
-           not (gap_start <= player_y_int < gap_start + gap_height):
-            game_over = True
-            save_highscore()  # Save highscore when game ends
+    finally:
+        input_handler.restore_keyboard()
 
 
-# Color constants
-RED = "\033[31m"
-GREEN = "\033[32m"
-YELLOW = "\033[33m"
-BLUE = "\033[34m"
-MAGENTA = "\033[35m"
-CYAN = "\033[36m"
-WHITE = "\033[37m"
-BRIGHT_RED = "\033[91m"
-BRIGHT_GREEN = "\033[92m"
-BRIGHT_YELLOW = "\033[93m"
-BRIGHT_BLUE = "\033[94m"
-BRIGHT_MAGENTA = "\033[95m"
-BRIGHT_CYAN = "\033[96m"
-BRIGHT_WHITE = "\033[97m"
-RESET = "\033[0m"
+def update_game_state(game_state: GameState, delta_time: float) -> None:
+    if game_state.game_over:
+        return
 
-# Game elements
-BORDER_CHAR = f"{BLUE}─{RESET}"
-BORDER_VERTICAL = f"{BLUE}│{RESET}"
-SCORE_COLOR = BRIGHT_GREEN
-HIGHSCORE_COLOR = BRIGHT_YELLOW
-GAMEOVER_COLOR = BRIGHT_RED
+    # Update player physics
+    game_state.player_velocity += game_state.player_config.GRAVITY * delta_time
+    game_state.player_y += game_state.player_velocity * delta_time
+
+    # Boundary checks
+    if game_state.player_y >= game_state.config.SCREEN_HEIGHT - 1:
+        game_state.player_y = game_state.config.SCREEN_HEIGHT - 1
+        game_state.game_over = True
+    elif game_state.player_y < 0:
+        game_state.player_y = 0
+        game_state.player_velocity = 0
+
+    # Update columns
+    update_columns(game_state, delta_time)
+    check_collisions(game_state)
 
 
-def generateFrame():
-    if game_over:
-        return generate_game_over_screen()
-
-    output = f"{SCORE_COLOR}Score: {score}{RESET} | {HIGHSCORE_COLOR}Highscore: {highscore}{RESET}\n"
-    output += BORDER_CHAR * (x_pixel + 2) + "\n"
-    for i in range(y_pixel):
-        output += BORDER_VERTICAL
-        j = 0
-        while j < x_pixel:
-            if i == int(player_y) and j == player_x:
-                output += player_char
-                j += PLAYER_VISIBLE_LENGTH
-                continue
-
-            column_here = False
-            for col_x, gap_start in columns:
-                if int(col_x) == j:
-                    if gap_start <= i < gap_start + gap_height:
-                        output += " "
-                    else:
-                        output += column_char
-                    column_here = True
-                    break
-            if not column_here:
-                output += " "
-            j += 1
-        output += BORDER_VERTICAL + "\n"
-    output += BORDER_CHAR * (x_pixel + 2) + "\n"
-    return output
+def update_columns(game_state: GameState, delta_time: float) -> None:
+    for i in range(len(game_state.columns)):
+        game_state.columns[i][0] -= game_state.config.SPEED * delta_time
+        if game_state.columns[i][0] < 0:
+            rightmost = max(col[0] for col in game_state.columns)
+            new_position = max(
+                rightmost + random.randint(
+                    game_state.config.MIN_SPACING,
+                    game_state.config.MAX_SPACING
+                ),
+                game_state.config.SCREEN_WIDTH
+            )
+            new_gap = random.randint(
+                1,
+                game_state.config.SCREEN_HEIGHT - game_state.config.GAP_HEIGHT - 1
+            )
+            game_state.columns[i] = [new_position, new_gap]
+            game_state.passed_columns.discard(i)
 
 
-def generate_game_over_screen():
-    output = f"{GAMEOVER_COLOR}Game Over - Score: {score}{RESET} | {HIGHSCORE_COLOR}Highscore: {highscore}{RESET}\n"
-    output += BORDER_CHAR * (x_pixel + 2) + "\n"
+def check_collisions(game_state: GameState) -> None:
+    player_y_int = int(game_state.player_y)
 
-    # Center the game over message
-    game_over_msg = f"{GAMEOVER_COLOR}GAME OVER - Press SPACE to restart{RESET}"
-    visible_msg_length = strip_ansi(game_over_msg)
-    padding = (x_pixel - visible_msg_length) // 2
+    for i, (col_x, gap_start) in enumerate(game_state.columns):
+        if i not in game_state.passed_columns and col_x < game_state.player_config.START_X:
+            if gap_start <= player_y_int < gap_start + game_state.config.GAP_HEIGHT:
+                game_state.passed_columns.add(i)
+                game_state.score += 1
 
-    for i in range(y_pixel):
-        output += BORDER_VERTICAL
-        if i == y_pixel // 2:
-            output += " " * padding + game_over_msg + " " * \
-                (x_pixel - padding - visible_msg_length)
-        else:
-            output += " " * x_pixel
-        output += BORDER_VERTICAL + "\n"
-    output += BORDER_CHAR * (x_pixel + 2) + "\n"
-    return output
+        if any(int(col_x) == game_state.player_config.START_X + offset
+               for offset in range(game_state.player_visible_length)) and \
+           not (gap_start <= player_y_int < gap_start + game_state.config.GAP_HEIGHT):
+            game_state.game_over = True
+            game_state.save_highscore()
 
 
-def outputFrame(frame):
-    # Move cursor up to the top of the game area (including score line)
+def output_frame(frame: str) -> None:
     sys.stdout.write('\033[H')  # Move to top of screen
     sys.stdout.write('\033[2J')  # Clear entire screen
     sys.stdout.write(frame)
     sys.stdout.flush()
 
 
-def updatePosition(delta_time):
-    global player_y, player_velocity, game_over, passed_columns
-
-    if game_over:
-        return
-
-    # Update player physics
-    player_velocity += gravity * delta_time
-    player_y += player_velocity * delta_time
-
-    # Keep player within bounds and check for ground collision
-    if player_y >= y_pixel - 1:
-        player_y = y_pixel - 1
-        game_over = True  # Game over when hitting the ground
-    elif player_y < 0:
-        player_y = 0
-        player_velocity = 0
-
-    # Update columns
-    for i in range(len(columns)):
-        columns[i][0] -= speed * delta_time
-        if columns[i][0] < 0:
-            rightmost = max(col[0] for col in columns)
-            new_position = max(
-                rightmost + random.randint(min_spacing, max_spacing), x_pixel)
-            new_gap = random.randint(1, y_pixel - gap_height - 1)
-            columns[i] = [new_position, new_gap]
-            # Remove this column's index from passed_columns when recycling it
-            passed_columns.discard(i)
-
-    check_collision()
-
-
-try:
-    # Set up keyboard
-    init_keyboard()
-
-    # Load highscore at game start
-    load_highscore()
-
-    # Clear screen and move cursor to top
-    print('\033[2J\033[H', end='')  # Clear screen and move to top
-
-    last_time = time.time()
-    while True:
-        current_time = time.time()
-        delta_time = current_time - last_time
-        last_time = current_time
-
-        check_keyboard()  # Check for space bar press
-        updatePosition(delta_time)
-        frm = generateFrame()
-        outputFrame(frm)
-        time.sleep(0.016)  # Cap at roughly 60 FPS
-
-finally:
-    # Restore terminal settings
-    restore_keyboard()
+if __name__ == "__main__":
+    main()
