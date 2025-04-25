@@ -5,6 +5,14 @@ import select
 import termios
 import tty
 import os
+import re
+
+
+def strip_ansi(text):
+    """Remove ANSI escape codes from text and return the visible length."""
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    return len(ansi_escape.sub('', text))
+
 
 x_pixel = 100
 y_pixel = 20
@@ -13,12 +21,15 @@ min_spacing = 15  # Minimum space between columns
 max_spacing = 40  # Maximum space between columns
 num_columns = 4  # Number of columns
 gap_height = 8  # Height of the opening in columns
+column_char = "\033[32mH\033[0m"
 
 # Player physics
 player_x = 20  # Fixed x position
 player_y = y_pixel // 2  # Starting y position
 player_velocity = 0  # Vertical velocity
-player_char = "(0)>"  # Changed from ">" to "0>"
+player_char = "\033[33m(0)>\033[0m"  # Yellow color for player
+# Automatically calculate visible length
+PLAYER_VISIBLE_LENGTH = strip_ansi(player_char)
 gravity = 20.0  # Acceleration due to gravity (pixels/second²)
 jump_strength = -10.0  # Negative because up is lower y-values
 
@@ -117,7 +128,7 @@ def check_collision():
                 score += 1
 
         # Collision detection for all positions the player character occupies
-        if any(int(col_x) == player_x + offset for offset in range(len(player_char))) and \
+        if any(int(col_x) == player_x + offset for offset in range(PLAYER_VISIBLE_LENGTH)) and \
            not (gap_start <= player_y_int < gap_start + gap_height):
             game_over = True
             save_highscore()  # Save highscore when game ends
@@ -135,7 +146,8 @@ def generateFrame():
         while j < x_pixel:
             if i == int(player_y) and j == player_x:
                 output += player_char
-                j += len(player_char)  # Skip the width of the player character
+                # Use visible length instead of len(player_char)
+                j += PLAYER_VISIBLE_LENGTH
                 continue
 
             column_here = False
@@ -144,7 +156,7 @@ def generateFrame():
                     if gap_start <= i < gap_start + gap_height:
                         output += " "
                     else:
-                        output += "H"
+                        output += column_char
                     column_here = True
                     break
             if not column_here:
