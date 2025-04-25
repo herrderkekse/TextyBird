@@ -142,7 +142,9 @@ def generate_game_over_screen():
 
 
 def outputFrame(frame):
-    sys.stdout.write('\033[A' * (y_pixel + 3))  # +3 for score line and borders
+    # Move cursor up to the top of the game area (including score line)
+    sys.stdout.write('\033[H')  # Move to top of screen
+    sys.stdout.write('\033[2J')  # Clear entire screen
     sys.stdout.write(frame)
     sys.stdout.flush()
 
@@ -182,8 +184,8 @@ try:
     # Set up keyboard
     init_keyboard()
 
-    # Print initial empty lines to allow cursor movement
-    print("\n" * (y_pixel + 3))  # +3 for score line and borders
+    # Clear screen and move cursor to top
+    print('\033[2J\033[H', end='')  # Clear screen and move to top
 
     last_time = time.time()
     while True:
