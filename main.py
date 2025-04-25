@@ -148,7 +148,7 @@ def outputFrame(frame):
 
 
 def updatePosition(delta_time):
-    global player_y, player_velocity
+    global player_y, player_velocity, game_over
 
     if game_over:
         return
@@ -157,10 +157,10 @@ def updatePosition(delta_time):
     player_velocity += gravity * delta_time
     player_y += player_velocity * delta_time
 
-    # Keep player within bounds
+    # Keep player within bounds and check for ground collision
     if player_y >= y_pixel - 1:
         player_y = y_pixel - 1
-        player_velocity = 0
+        game_over = True  # Game over when hitting the ground
     elif player_y < 0:
         player_y = 0
         player_velocity = 0
@@ -168,7 +168,7 @@ def updatePosition(delta_time):
     # Update columns
     for i in range(len(columns)):
         columns[i][0] -= speed * delta_time
-        if columns[i][0] < 0:  # Reset position when reaching left edge
+        if columns[i][0] < 0:
             rightmost = max(col[0] for col in columns)
             new_position = max(
                 rightmost + random.randint(min_spacing, max_spacing), x_pixel)
