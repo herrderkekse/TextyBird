@@ -7,8 +7,14 @@ y_pixel = 20
 speed = 30  # Pixels per second
 min_spacing = 15  # Minimum space between columns
 max_spacing = 40  # Maximum space between columns
-num_columns = 4  # Number of columns
+num_columns = 0  # Number of columns
 gap_height = 3  # Height of the opening in columns
+
+# Player physics
+player_x = 20  # Fixed x position
+player_y = 0  # Starting y position
+player_velocity = 0  # Vertical velocity
+gravity = 30.0  # Acceleration due to gravity (pixels/second²)
 
 # Initialize columns with random spacing and gap positions
 # Each column is now [x_position, gap_start_y]
@@ -26,6 +32,11 @@ def generateFrame():
     for i in range(y_pixel):
         output += "|"
         for j in range(x_pixel):
+            # Draw player
+            if i == int(player_y) and j == player_x:
+                output += "P"
+                continue
+
             # Check if any column is at this x position
             column_here = False
             for col_x, gap_start in columns:
@@ -51,6 +62,21 @@ def outputFrame(frame):
 
 
 def updatePosition(delta_time):
+    global player_y, player_velocity
+
+    # Update player physics
+    player_velocity += gravity * delta_time
+    player_y += player_velocity * delta_time
+
+    # Keep player within bounds
+    if player_y >= y_pixel - 1:
+        player_y = y_pixel - 1
+        player_velocity = 0
+    elif player_y < 0:
+        player_y = 0
+        player_velocity = 0
+
+    # Update columns
     for i in range(len(columns)):
         columns[i][0] -= speed * delta_time
         if columns[i][0] < 0:  # Reset position when reaching left edge
