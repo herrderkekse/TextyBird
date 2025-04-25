@@ -1,2 +1,2 @@
 # TextyBird
-Fally Bird, but it runs inside a text editor
+Flappy Bird, but it runs inside the terminal
