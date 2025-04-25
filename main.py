@@ -4,6 +4,7 @@ import random
 import select
 import termios
 import tty
+import os
 
 x_pixel = 100
 y_pixel = 20
@@ -25,6 +26,32 @@ jump_strength = -10.0  # Negative because up is lower y-values
 score = 0
 game_over = False
 passed_columns = set()  # Keep track of columns we've passed through
+
+# Highscore functionality
+HIGHSCORE_FILE = "highscore.txt"
+highscore = 0
+
+
+def load_highscore():
+    global highscore
+    try:
+        if os.path.exists(HIGHSCORE_FILE):
+            with open(HIGHSCORE_FILE, 'r') as f:
+                highscore = int(f.read().strip())
+    except:
+        highscore = 0
+
+
+def save_highscore():
+    global highscore, score
+    if score > highscore:
+        highscore = score
+        try:
+            with open(HIGHSCORE_FILE, 'w') as f:
+                f.write(str(highscore))
+        except:
+            pass
+
 
 # Initialize columns with random spacing and gap positions
 columns = []
@@ -93,13 +120,14 @@ def check_collision():
         if any(int(col_x) == player_x + offset for offset in range(len(player_char))) and \
            not (gap_start <= player_y_int < gap_start + gap_height):
             game_over = True
+            save_highscore()  # Save highscore when game ends
 
 
 def generateFrame():
     if game_over:
         return generate_game_over_screen()
 
-    output = f"Score: {score}\n"
+    output = f"Score: {score} | Highscore: {highscore}\n"
     output += "-" * (x_pixel + 2) + "\n"
     for i in range(y_pixel):
         output += "|"
@@ -128,7 +156,7 @@ def generateFrame():
 
 
 def generate_game_over_screen():
-    output = f"Game Over - Score: {score}\n"
+    output = f"Game Over - Score: {score} | Highscore: {highscore}\n"
     output += "-" * (x_pixel + 2) + "\n"
 
     # Center the game over message
@@ -191,6 +219,9 @@ def updatePosition(delta_time):
 try:
     # Set up keyboard
     init_keyboard()
+
+    # Load highscore at game start
+    load_highscore()
 
     # Clear screen and move cursor to top
     print('\033[2J\033[H', end='')  # Clear screen and move to top
