@@ -11,13 +11,13 @@ speed = 40  # Pixels per second
 min_spacing = 15  # Minimum space between columns
 max_spacing = 40  # Maximum space between columns
 num_columns = 4  # Number of columns
-gap_height = 18  # Height of the opening in columns
+gap_height = 8  # Height of the opening in columns
 
 # Player physics
 player_x = 20  # Fixed x position
 player_y = y_pixel // 2  # Starting y position
 player_velocity = 0  # Vertical velocity
-player_char = ">"
+player_char = "(0)>"  # Changed from ">" to "0>"
 gravity = 20.0  # Acceleration due to gravity (pixels/second²)
 jump_strength = -10.0  # Negative because up is lower y-values
 
@@ -89,8 +89,9 @@ def check_collision():
                 passed_columns.add(i)
                 score += 1
 
-        # Collision detection
-        if int(col_x) == player_x and not (gap_start <= player_y_int < gap_start + gap_height):
+        # Collision detection for all positions the player character occupies
+        if any(int(col_x) == player_x + offset for offset in range(len(player_char))) and \
+           not (gap_start <= player_y_int < gap_start + gap_height):
             game_over = True
 
 
@@ -102,9 +103,11 @@ def generateFrame():
     output += "-" * (x_pixel + 2) + "\n"
     for i in range(y_pixel):
         output += "|"
-        for j in range(x_pixel):
+        j = 0
+        while j < x_pixel:
             if i == int(player_y) and j == player_x:
                 output += player_char
+                j += len(player_char)  # Skip the width of the player character
                 continue
 
             column_here = False
@@ -118,6 +121,7 @@ def generateFrame():
                     break
             if not column_here:
                 output += " "
+            j += 1
         output += "|\n"
     output += "-" * (x_pixel + 2) + "\n"
     return output
